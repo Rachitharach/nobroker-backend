@@ -62,24 +62,22 @@ app.use("/api/meetings", meetingRoutes);
 
 // Connect to MongoDB and start server
 mongoose
-    .connect(process.env.MONGO_URL)
+    .connect(process.env.MONGO_URL, {
+        serverSelectionTimeoutMS: 15000
+    })
     .then(() => {
         console.log("MongoDB Atlas connected successfully");
 
-console.log("CONNECTED HOST:", mongoose.connection.host);
-console.log("CONNECTED DATABASE:", mongoose.connection.name);
-console.log(
-  "CONNECTED COLLECTION:",
-  mongoose.connection.collection("properties").collectionName
-);
-
+        console.log("CONNECTED HOST:", mongoose.connection.host);
+        console.log("CONNECTED DATABASE:", mongoose.connection.name);
 
         app.listen(process.env.PORT || 5000, () => {
             console.log(
-                `Server running on http://localhost:${process.env.PORT || 5000}`
+                `Server running on port ${process.env.PORT || 5000}`
             );
         });
     })
     .catch((error) => {
-        console.error("MongoDB connection failed:", error.message);
+        console.error("MongoDB connection failed:");
+        console.error(error);
     });

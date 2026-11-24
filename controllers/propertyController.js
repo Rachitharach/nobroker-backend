@@ -149,14 +149,14 @@ Promise.all([
     adType: "Rent"
   }).select("title type adType status isActive").lean()
 ])
-.then((results) => {
-  console.log("TOTAL PROPERTIES:", results[0]);
-  console.log("COMMERCIAL:", results[1]);
-  console.log("RENT:", results[2]);
-  console.log("COMMERCIAL RENT:", results[3]);
-  console.log("COMMERCIAL RENT APPROVED:", results[4]);
-  console.log("SAMPLE DOCUMENTS:", results[5]);
-})
+// .then((results) => {
+//   console.log("TOTAL PROPERTIES:", results[0]);
+//   console.log("COMMERCIAL:", results[1]);
+//   console.log("RENT:", results[2]);
+//   console.log("COMMERCIAL RENT:", results[3]);
+//   console.log("COMMERCIAL RENT APPROVED:", results[4]);
+//   console.log("SAMPLE DOCUMENTS:", results[5]);
+// })
 .catch((err) => console.log("DEBUG ERROR:", err));
   Property.find(filter)
   .sort({ createdAt: -1 })
@@ -184,6 +184,6 @@ Promise.all([
 };
 Property.countDocuments({})
   .then((count) => {
-    console.log("TOTAL PROPERTIES IN BACKEND:", count);
+    // console.log("TOTAL PROPERTIES IN BACKEND:", count);
   })
   .catch((err) => console.log(err.message));
