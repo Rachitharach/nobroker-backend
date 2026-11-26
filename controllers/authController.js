@@ -46,17 +46,18 @@ exports.requestOtp = (req, res) => {
 };
 
 // 2. Verify OTP (login or signup)
-exports.verifyOtp = (req, res) => {
-    const phone = req.body.phone;
-    const otp = req.body.otp;
 
-    if (!phone || !/^[0-9]{10}$/.test(String(phone)) || !otp) {
+exports.verifyOtp = (req, res) => {
+    const phone = String(req.body.phone || "").trim();
+    const otp = String(req.body.otp || "").trim();
+
+    if (!/^[0-9]{10}$/.test(phone) || !otp) {
         return res.status(400).json({
             message: "Enter a valid 10-digit phone number and OTP",
         });
     }
 
-    const savedOtp = otpStore.get(String(phone));
+    const savedOtp = otpStore.get(phone);
 
     if (!savedOtp) {
         return res.status(400).json({
@@ -64,9 +65,8 @@ exports.verifyOtp = (req, res) => {
         });
     }
 
-    // Check expiry
     if (Date.now() >= savedOtp.expiresAt) {
-        otpStore.delete(String(phone));
+        otpStore.delete(phone);
 
         return res.status(400).json({
             message: "OTP expired. Please request a new OTP",
@@ -74,40 +74,42 @@ exports.verifyOtp = (req, res) => {
         });
     }
 
-    // Allow a maximum of 5 attempts
     savedOtp.attempts += 1;
 
     if (savedOtp.attempts > 5) {
-        otpStore.delete(String(phone));
+        otpStore.delete(phone);
 
         return res.status(429).json({
             message: "Too many attempts. Please request a new OTP",
         });
     }
 
-    // Check whether OTP matches
-    if (String(otp) !== savedOtp.otp) {
+    if (otp !== savedOtp.otp) {
         return res.status(400).json({
             message: "Invalid OTP",
             attemptsRemaining: 5 - savedOtp.attempts,
         });
     }
 
-    // OTP verified; remove it
-    otpStore.delete(String(phone));
+    otpStore.delete(phone);
 
-    // Check whether user already exists
-    User.findOne({ phone: String(phone) })
+    console.log("Searching phone:", phone);
+    console.log("Database:", User.db.name);
+    console.log("Collection:", User.collection.name);
+
+    User.findOne({ phone: phone })
         .then((user) => {
-            const token = createToken(String(phone));
+            console.log("FOUND USER:", user);
 
-            // Existing user: login
+            const token = createToken(phone);
+
+            // Existing user with completed profile
             if (user && user.name && user.email) {
                 return res.json({
                     message: "Login successful",
                     isNewUser: false,
                     requiresProfile: false,
-                    token: token,
+                    token,
                     user: {
                         phone: user.phone,
                         name: user.name,
@@ -116,12 +118,12 @@ exports.verifyOtp = (req, res) => {
                 });
             }
 
-            // New user: complete signup
+            // New user or existing user with incomplete profile
             return res.json({
                 message: "OTP verified successfully",
                 isNewUser: !user,
                 requiresProfile: true,
-                token: token,
+                token,
                 user: user
                     ? {
                         phone: user.phone,
@@ -129,7 +131,7 @@ exports.verifyOtp = (req, res) => {
                         email: user.email,
                     }
                     : {
-                        phone: String(phone),
+                        phone,
                         name: "",
                         email: "",
                     },
@@ -144,21 +146,21 @@ exports.verifyOtp = (req, res) => {
         });
 };
 
-// 3. Save user profile (signup)
-exports.updateProfile = (req, res) => {
-    const name = req.body.name;
-    const email = req.body.email;
-    const phone = req.user.phone;
 
-    if (!name || !name.trim()) {
+// 3. Save user profile (signup)
+
+exports.updateProfile = (req, res) => {
+    const phone = String(req.user.phone);
+    const name = String(req.body.name || "").trim();
+    const normalizedEmail = String(req.body.email || "")
+        .trim()
+        .toLowerCase();
+
+    if (!name) {
         return res.status(400).json({
             message: "Name is required",
         });
     }
-
-    const normalizedEmail = email
-        ? email.trim().toLowerCase()
-        : "";
 
     const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -168,68 +170,65 @@ exports.updateProfile = (req, res) => {
         });
     }
 
+    User.findOne({ phone })
+        .then((user) => {
+            if (user && user.name && user.email) {
+                return res.status(409).json({
+                    message: "Profile is already completed",
+                });
+            }
 
-
-
-// Check if email belongs to another user
-User.findOne({
-    email: normalizedEmail,
-})
-    .then((existingUser) => {
-        if (existingUser) {
-            return res.status(409).json({
-                message: "This email is already registered",
-            });
-        }
-
-        // Check whether this phone number already exists
-        return User.findOne({
-            phone: phone,
-        });
-    })
-    .then((existingPhone) => {
-        if (!existingPhone) {
-            return User.create({
-                phone: phone,
-                name: name.trim(),
+            return User.findOne({
                 email: normalizedEmail,
+                phone: { $ne: phone },
+            }).then((existingEmail) => {
+                if (existingEmail) {
+                    return res.status(409).json({
+                        message: "This email is already registered",
+                    });
+                }
+
+                if (user) {
+                    user.name = name;
+                    user.email = normalizedEmail;
+
+                    return user.save();
+                }
+
+                return User.create({
+                    phone,
+                    name,
+                    email: normalizedEmail,
+                });
             });
-        }
+        })
+        .then((user) => {
+            if (!user || res.headersSent) return;
 
-        res.status(409).json({
-            message: "This phone number is already registered",
-        });
-
-        return null;
-    })
-    .then((user) => {
-        if (!user) {
-            return;
-        }
-
-        return res.json({
-            message: "Profile saved successfully",
-            user: {
-                phone: user.phone,
-                name: user.name,
-                email: user.email,
-            },
-        });
-    })
-    .catch((error) => {
-        console.log("Profile error:", error);
-
-        if (error.code === 11000) {
-            return res.status(409).json({
-                message: "Phone number or email is already registered",
+            return res.json({
+                message: "Profile saved successfully",
+                user: {
+                    phone: user.phone,
+                    name: user.name,
+                    email: user.email,
+                },
             });
-        }
+        })
+        .catch((error) => {
+            console.log("Profile error:", error);
 
-        return res.status(500).json({
-            message: "Could not save profile",
+            if (error.code === 11000) {
+                return res.status(409).json({
+                    message: "Phone number or email is already registered",
+                });
+            }
+
+            return res.status(500).json({
+                message: "Could not save profile",
+            });
         });
-    });
-}
+};
+
 
 
 // Firebase login
